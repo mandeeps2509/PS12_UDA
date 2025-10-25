@@ -1,0 +1,8 @@
+torch>=2.3
+torchvision
+torchaudio
+numpy
+pandas
+transformers
+evaluate
+soundfile
