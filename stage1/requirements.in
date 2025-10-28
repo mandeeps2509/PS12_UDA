@@ -6,3 +6,6 @@ pandas
 transformers
 evaluate
 soundfile
+torchcodec
+datasets
+scikit-learn

@@ -7,6 +7,12 @@ ARG USERNAME="docker_usr"
 # ARG USER_GID="12345"
 ARG GROUPNAME="docker_ml"
 
+# labels for meta-data
+LABEL description="AIGC25: Underwater Domain Awareness"
+LABEL version="1.0"
+LABEL author="Mandeep Singh"
+LABEL mail="mandeeps2509@gmail.com"
+
 # docker base image (minimal)
 FROM python:${PY_VER}-slim AS base
 
@@ -36,7 +42,7 @@ RUN chown -R docker_usr:docker_ml /ml_app
 USER docker_usr
 
 # print UID & GID
-CMD sh -c "echo '>> In container (after sys dependencies install):' && echo 'User: $(whoami) UID: $(id -u) GID: $(id -g)'"
+CMD ["sh", "-c", "echo '>> In container (after sys dependencies install):' && echo 'User: $(whoami) UID: $(id -u) GID: $(id -g)'"]
 
 # copy dependencies into image
 COPY requirements.txt /ml_app
