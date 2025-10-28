@@ -1,5 +1,7 @@
 """
+# PS12: Underwater Domain Awareness
 Fine-tuning of AST
+Author: mandeeps2509@gmail.com
 """
 
 import os
@@ -15,15 +17,16 @@ from transformers import Trainer, TrainingArguments
 # pre-trained model name
 pretrained_model = "MIT/ast-finetuned-audioset-10-10-0.4593"
 
-parser = argparse.ArgumentParser()
-parser.add_argument("--device", default="cpu")
-args = parser.parse_args()
+# parser = argparse.ArgumentParser()
+# parser.add_argument("--device", default="cpu")
+# args = parser.parse_args()
 
 device = torch.device(
     "cuda" if torch.cuda.is_available()
     else "mps" if torch.backends.mps.is_available()
     else "cpu"
 )
+print(f'Device: {device}')
 
 class fine_tune_AST():
     def __init__(self, categories, model=None, mean=0, std=1):
@@ -32,7 +35,9 @@ class fine_tune_AST():
 
         # config update: id2label as per mapping
         self.config.num_labels = len(categories)
-        self.config.id2label = {i: category["name"] for i, category in enumerate(categories)}
+        self.config.id2label = {}
+        for i, category in enumerate(categories):
+            self.config.id2label[category["id"]] = category["name"]
         self.config.label2id = {v: k for k, v in self.config.id2label.items()}
 
         self.feature_extractor = ASTFeatureExtractor.from_pretrained(pretrained_model)
@@ -85,8 +90,8 @@ class fine_tune_AST():
             num_train_epochs=N_epochs,  # Number of epochs
             per_device_train_batch_size=batch_size,  # Batch size per device
             eval_strategy="epoch",  # Evaluation strategy
-            # save_strategy="epoch",
-            eval_steps=1,
+            save_strategy="epoch",
+            # eval_steps=1,
             # save_steps=1,
             load_best_model_at_end=True,
             metric_for_best_model="accuracy",
@@ -105,4 +110,7 @@ class fine_tune_AST():
 
         # training run
         trainer.train()
+
+        # save model
+        self.model.save_pretrained(output_dir)
 
