@@ -29,16 +29,19 @@ device = torch.device(
 print(f'Device: {device}')
 
 class fine_tune_AST():
-    def __init__(self, categories, model=None, mean=0, std=1):
+    def __init__(self, categories, model_dir=None, mean=0, std=1):
         # load configuration for pre-trained AST model
-        self.config = ASTConfig.from_pretrained(pretrained_model)
+        if model_dir is None:
+            self.config = ASTConfig.from_pretrained(pretrained_model)
 
-        # config update: id2label as per mapping
-        self.config.num_labels = len(categories)
-        self.config.id2label = {}
-        for i, category in enumerate(categories):
-            self.config.id2label[category["id"]] = category["name"]
-        self.config.label2id = {v: k for k, v in self.config.id2label.items()}
+            # config update: id2label as per mapping
+            self.config.num_labels = len(categories)
+            self.config.id2label = {}
+            for i, category in enumerate(categories):
+                self.config.id2label[category["id"]] = category["name"]
+            self.config.label2id = {v: k for k, v in self.config.id2label.items()}
+        else:
+            self.config = ASTConfig.from_pretrained(model_dir)
 
         self.feature_extractor = ASTFeatureExtractor.from_pretrained(pretrained_model)
         self.feature_extractor.mean = mean
@@ -49,13 +52,15 @@ class fine_tune_AST():
         self.model_input_name = self.feature_extractor.model_input_names[0]  # key -> 'input_values'
         self.SAMPLING_RATE = self.feature_extractor.sampling_rate
 
-        if model is not None:
-            self.model = model
+        if model_dir is not None:
+            self.model = ASTForAudioClassification.from_pretrained(model_dir,
+                                                                   config=self.config,
+                                                                   ignore_mismatched_sizes=True)
         else:
             self.model = ASTForAudioClassification.from_pretrained(pretrained_model,
                                                                    config=self.config,
                                                                    ignore_mismatched_sizes=True)
-        self.model.init_weights()
+            self.model.init_weights()
 
     def preprocess_audio(self, batch_data):
         wavs = [audio["array"] for audio in batch_data["input_values"]]
@@ -114,3 +119,46 @@ class fine_tune_AST():
         # save model
         self.model.save_pretrained(output_dir)
 
+    def evaluation(self, dataset, output_dir='./results'):
+        # define TrainingArguments (w/o training)
+        training_args = TrainingArguments(
+            do_train=False,
+            output_dir=output_dir
+        )
+
+        # initialize Trainer
+        trainer = Trainer(
+            model=self.model,
+            args=training_args,
+            eval_dataset=dataset["test"],
+            compute_metrics=self.compute_metrics,  # Use the metrics function from above
+        )
+
+        # evaluate model
+        metrics = trainer.evaluate()
+        print(metrics)
+
+    def prediction(self, inputs, output_dir='./results'):
+        # feature inputs
+        # inputs = self.feature_extractor(data, sampling_rate=self.SAMPLING_RATE, return_tensors='pt')
+        # define TrainingArguments (w/o training)
+        training_args = TrainingArguments(
+            do_train=False,
+            output_dir=output_dir
+        )
+
+        # initialize Trainer
+        trainer = Trainer(
+            model=self.model,
+            args=training_args
+        )
+
+        # evaluate model
+        logits = trainer.predict(inputs).predictions
+        # with torch.no_grad():
+        #     logits = self.model(**inputs).logits
+
+        # predicted classes
+        predicted_class_ids = np.argmax(logits, axis=1)
+
+        return predicted_class_ids
