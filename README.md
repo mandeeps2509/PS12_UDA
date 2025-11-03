@@ -16,14 +16,16 @@
     "4": "other_anthropogenic"
 }
 ```
+- Datasets can be placed in './stage1/data' directory
+
 #### [Training]
 - Training without audio chunks from the training data (raw data), no test mode:
 ```
-python3 ast_anomaly_detection.py -tr=True -trd='data/train' -t=False
+python3 ast_anomaly_detection.py -tr=True -trd='../data/train' -t=False
 ```
 - Training with audio chunks from the training data {w/ annotated labels: dict_audio_chunks_labels.json}
 ```
-python3 ast_anomaly_detection.py -tr=True --trd='data/train' -tra='data/train/chunks/dict_audio_chunks_labels.json' -t=False
+python3 ast_anomaly_detection.py -tr=True --trd='../data/train' -tra='../data/train/chunks/dict_audio_chunks_labels.json' -t=False
 ```
 >> Model is saved at './trained_ast_clf'
 
@@ -44,9 +46,10 @@ docker run -d --name UDA_CONTAINER -p 8080:80 UDA_IMAGE:v1
 ```
 docker ps
 ```
+- *NOTE*: Check for the installation of ffmpeg(>=6.1) that is required
 
 #### [Inference]
-- Test mode only w/ test data at /data/test & output results in output.json:
+- Test mode only w/ test data at ../data/test & output results in ./results/output.json:
 ```
-python3 ast_anomaly_detection.py -tr=False -t=True -td='data/test' -o='data/output.json'
+python3 ast_anomaly_detection.py -tr=False -t=True -td='../data/test' -o='./results/output.json'
 ```

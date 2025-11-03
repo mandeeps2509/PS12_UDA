@@ -4,8 +4,10 @@ torchaudio
 numpy
 pandas
 transformers
+peft
 evaluate
 soundfile
 torchcodec
+pydub
 datasets
 scikit-learn
