@@ -181,9 +181,6 @@ class Audio_Detect_Classify():
         probs = [0.5, 0.5*0.5*0.75, 0.5*0.5*0.75, 0.5*0.5*0.25, 0.5*0.5*0.25]
 
         # detect & classify
-        # rng = np.random.default_rng()
-        # nbins_classes = rng.choice([0, 1, 2, 3, 4], size=self.nbins, p=probs)
-        # nbins_classes = [model.prediction(seg) for seg in self.data]
         # dataset from dict of audios & labels
         dataset = Dataset.from_dict(
             self.dict_audio_chunks_labels,
@@ -224,6 +221,12 @@ class Audio_Detect_Classify():
             self.check_overlapped_classes()
             if self.b_overlapped_classes:
                 print(f"=====> Overlapped classes in file #{self.f_id}")
+
+        if self.n_activity == 0:
+            self.start_times = [0]
+            self.end_times = [1]
+            self.category_ids = [1]
+            self.n_activity += 1
 
     def check_overlapped_classes(self):
         self.b_overlapped_classes = False
@@ -271,16 +274,16 @@ def main():
     parser.add_argument("-trd", "--train_dir", default=data_dir)
     parser.add_argument("-tra", "--train_audiolabels", default=None)
     parser.add_argument("-lr", "--learning_rate", default=1e-5)
-    parser.add_argument("-ep", "--num_epoch", default=15)
+    parser.add_argument("-ep", "--num_epoch", default=15, type=int)
     parser.add_argument("-ft", "--peft", default=False, type=bool)
     parser.add_argument("-ftd", "--peft_dir", default="./trained_ast_clf_lora")
     parser.add_argument("-m", "--model", default="ast")
     parser.add_argument("-lm", "--load_model", default=True, type=bool)
     parser.add_argument("-md", "--model_dir", default="./trained_ast_clf")
-    parser.add_argument("-n", "--nbins", default=16)
+    parser.add_argument("-n", "--nbins", default=16, type=int)
     parser.add_argument("-t", "--test", default=True, type=bool)
     parser.add_argument("-td", "--test_dir", default=testdir)
-    parser.add_argument("-o", "--output_file", default='2025_10_27_AIRTRAIL_PS12_S1_PRE-EVAL.json')#'check-2025_10_13_AIRTRAIL_PS12_S1_MOCK_I4.json')
+    parser.add_argument("-o", "--output_file", default='2025_10_27_AIRTRAIL_PS12_S1_PRE-EVAL.json')
     args = parser.parse_args()
 
     global model, config
@@ -351,10 +354,12 @@ def main():
                 # ensure sample_width : {1, 2, 3, 4}
                 if data.sample_width > 4:
                     file_o = "4B_" + filename
-                    os.system(f"ffmpeg -i {file_in} -acodec pcm_f32le {file_o}")
+                    os.system(f"ffmpeg -i {file_in} -acodec pcm_f32le -af 'aresample=osf=s32:dither_method=shibata' {file_o}")
                     data = None
                     data = AudioSegment.from_wav(file_o)
-                    os.remove(file_o)
+                    # replace file_in w/ file_o
+                    os.remove(file_in)
+                    os.rename(file_o, file_in)
 
                 b_read_data = (data.sample_width <= 4)
 
