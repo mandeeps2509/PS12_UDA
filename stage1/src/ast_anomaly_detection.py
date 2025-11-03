@@ -36,13 +36,18 @@ categories = [{"id": 1, "name": "vessel"},
 # pre-trained model name
 pretrained_model = "MIT/ast-finetuned-audioset-10-10-0.4593"
 
-# load configuration for pre-trained AST model
-config = ASTConfig.from_pretrained(pretrained_model)
+def init_config(model_dir=None):
+    global config
+    if model_dir is None:
+        # load configuration for pre-trained AST model
+        config = ASTConfig.from_pretrained(pretrained_model)
+    else:
+        config = ASTConfig.from_pretrained(model_dir, use_safetensors=True, local_files_only=True)
 
-# config update: id2label as per mapping
-config.num_labels = len(categories)
-config.id2label = {i: category["name"] for i, category in enumerate(categories)}
-config.label2id = {v: k for k, v in config.id2label.items()}
+    # config update: id2label as per mapping
+    config.num_labels = len(categories)
+    config.id2label = {i: category["name"] for i, category in enumerate(categories)}
+    config.label2id = {v: k for k, v in config.id2label.items()}
 
 audio_keys = ["id", "file_name", "file_path", "duration"]
 info_dict = {"description": "Grand Challenge UDA", 
@@ -120,11 +125,12 @@ def init_files_ds(path_testdir):
         annotations_list = []#[{} for i in range(len(files))]
         return True
 
-def init_model(model_name, model_dir=None):
+def init_model(model_name, model_dir=None, b_peft=False, peft_dir=None):
     global model
     # class instance of model
     if model_name.lower() == 'ast':
-        model = fine_tune_AST([{"id": 0, "name": "noise"}] + categories, model_dir=model_dir)
+        model = fine_tune_AST([{"id": 0, "name": "noise"}] + categories, 
+                              model_dir=model_dir, b_peft=b_peft, peft_dir=peft_dir)
         return True
     else:
         return False
@@ -219,15 +225,6 @@ class Audio_Detect_Classify():
             if self.b_overlapped_classes:
                 print(f"=====> Overlapped classes in file #{self.f_id}")
 
-            # classification
-            # if np.random.uniform() > 0.5:
-            #     c_id_factor = 2
-            # else:
-            #     c_id_factor = 4
-
-            # # category id
-            # self.category_ids.append(int(c_id_factor * np.random.uniform() + 1))
-
     def check_overlapped_classes(self):
         self.b_overlapped_classes = False
         for i in range(self.n_activity - 1):
@@ -270,26 +267,30 @@ def save_output(filename='2025_10_06_AIRTRAIL_PS12_S1_MOCK3.json'):
 def main():
     # get val to arguments 
     parser = argparse.ArgumentParser()
-    parser.add_argument("-tr", "--train", default=False)
+    parser.add_argument("-tr", "--train", default=False, type=bool)
     parser.add_argument("-trd", "--train_dir", default=data_dir)
     parser.add_argument("-tra", "--train_audiolabels", default=None)
-    parser.add_argument("-lr", "--learning_rate", default=5e-5)
-    parser.add_argument("-ep", "--num_epoch", default=10)
+    parser.add_argument("-lr", "--learning_rate", default=1e-5)
+    parser.add_argument("-ep", "--num_epoch", default=15)
+    parser.add_argument("-ft", "--peft", default=False, type=bool)
+    parser.add_argument("-ftd", "--peft_dir", default="./trained_ast_clf_lora")
     parser.add_argument("-m", "--model", default="ast")
-    parser.add_argument("-lm", "--load_model", default=True)
+    parser.add_argument("-lm", "--load_model", default=True, type=bool)
     parser.add_argument("-md", "--model_dir", default="./trained_ast_clf")
     parser.add_argument("-n", "--nbins", default=16)
-    parser.add_argument("-t", "--test", default=True)
+    parser.add_argument("-t", "--test", default=True, type=bool)
     parser.add_argument("-td", "--test_dir", default=testdir)
     parser.add_argument("-o", "--output_file", default='2025_10_27_AIRTRAIL_PS12_S1_PRE-EVAL.json')#'check-2025_10_13_AIRTRAIL_PS12_S1_MOCK_I4.json')
     args = parser.parse_args()
 
-    global model
+    global model, config
     if args.load_model:
         model_dir = args.model_dir
     else:
         model_dir = None
-    b_init = init_model(args.model, model_dir)
+    init_config(model_dir)
+    b_init = init_model(args.model, model_dir=model_dir, 
+                        b_peft=args.peft, peft_dir=args.peft_dir)
     if b_init and args.train:
         # export chunks of dataset
         if args.train_audiolabels is None:
@@ -302,7 +303,7 @@ def main():
             b_audio_chunks = True
             with open(args.train_audiolabels, 'r') as file:
                 dict_audios_labels = json.load(file)
-            print('===> Loaded audio chunks')
+            print('===> Loaded audio chunks dict')
 
         if b_audio_chunks:
             # dataset from dict of audios & labels
@@ -323,17 +324,20 @@ def main():
                                                stratify_by_column="labels")
 
         print("====> Dataset loaded and pre-processed for training")
+        output_dir = args.model_dir + "_lora" if args.peft else args.model_dir
         model.training(dataset, lr=args.learning_rate, 
-                       N_epochs=args.num_epoch, batch_size=args.nbins)
+                       N_epochs=args.num_epoch, batch_size=args.nbins,
+                       output_dir=output_dir)
          
     if b_init and args.test:
-        if init_files_ds(os.getcwd() + "/" + args.test_dir):
+        if init_files_ds(args.test_dir):
             global files
             d = {}
             for filename in files:
-                # id
-                f_id = int(re.search(r'_(\d+)', filename)[1])
-                d[f_id] = filename
+                if filename.endswith(('wav', 'mp3')):
+                    # id
+                    f_id = int(re.search(r'_(\d+)', filename)[1])
+                    d[f_id] = filename
             sorted_filenames=sorted(d.items())
             print(">> Entered test mode:")
 

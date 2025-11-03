@@ -1,6 +1,6 @@
 """
 # PS12: Underwater Domain Awareness
-Fine-tuning of AST
+Fine-tuning of Audio Spectrogram Transformer (AST)
 Author: mandeeps2509@gmail.com
 """
 
@@ -13,6 +13,8 @@ import argparse
 from transformers import ASTConfig, ASTForAudioClassification
 from transformers import ASTFeatureExtractor
 from transformers import Trainer, TrainingArguments
+
+from peft import LoraConfig, get_peft_model, PeftModel
 
 # pre-trained model name
 pretrained_model = "MIT/ast-finetuned-audioset-10-10-0.4593"
@@ -29,7 +31,7 @@ device = torch.device(
 print(f'Device: {device}')
 
 class fine_tune_AST():
-    def __init__(self, categories, model_dir=None, mean=0, std=1):
+    def __init__(self, categories, model_dir=None, mean=0, std=1, b_peft=False, peft_dir=None):
         # load configuration for pre-trained AST model
         if model_dir is None:
             self.config = ASTConfig.from_pretrained(pretrained_model)
@@ -41,8 +43,28 @@ class fine_tune_AST():
                 self.config.id2label[category["id"]] = category["name"]
             self.config.label2id = {v: k for k, v in self.config.id2label.items()}
         else:
-            self.config = ASTConfig.from_pretrained(model_dir)
+            print(f"=======> Loading saved ASTConfig at {model_dir}")
+            self.config = ASTConfig.from_pretrained(model_dir, use_safetensors=True,
+                                                                local_files_only=True)
 
+        self.b_peft = b_peft
+        if self.b_peft:
+            if peft_dir is None:
+                self.lora_config = LoraConfig(
+                    r=16,
+                    lora_alpha=16,
+                    target_modules=["query", "value"],
+                    lora_dropout=0.1,
+                    bias="none",
+                    init_lora_weights="gaussian",
+                    modules_to_save=["classifier"],
+                )
+            else:
+                print(f"=======> Loading saved LoraConfig at {peft_dir}")
+                self.lora_config = LoraConfig.from_pretrained(peft_dir, use_safetensors=True,
+                                                                   local_files_only=True)
+
+        print(f"=======> Loading ASTFeatureExtractor from {pretrained_model}")
         self.feature_extractor = ASTFeatureExtractor.from_pretrained(pretrained_model)
         self.feature_extractor.mean = mean
         self.feature_extractor.std = std
@@ -53,14 +75,26 @@ class fine_tune_AST():
         self.SAMPLING_RATE = self.feature_extractor.sampling_rate
 
         if model_dir is not None:
+            print(f"=======> Loading saved ASTForAudioClassification at {model_dir}")
             self.model = ASTForAudioClassification.from_pretrained(model_dir,
                                                                    config=self.config,
-                                                                   ignore_mismatched_sizes=True)
+                                                                   ignore_mismatched_sizes=True, 
+                                                                   use_safetensors=True,
+                                                                   local_files_only=True)
         else:
             self.model = ASTForAudioClassification.from_pretrained(pretrained_model,
                                                                    config=self.config,
                                                                    ignore_mismatched_sizes=True)
             self.model.init_weights()
+
+        if self.b_peft:
+            if peft_dir is None:
+                self.model = get_peft_model(self.model, self.lora_config)
+                self.model.print_trainable_parameters()
+            else:
+                print(f"=======> Loading saved PeftModel at {peft_dir}")
+                self.model = PeftModel.from_pretrained(self.model, peft_dir, use_safetensors=True,
+                                                                   local_files_only=True)
 
     def preprocess_audio(self, batch_data):
         wavs = [audio["array"] for audio in batch_data["input_values"]]
@@ -94,6 +128,9 @@ class fine_tune_AST():
             push_to_hub=False,
             num_train_epochs=N_epochs,  # Number of epochs
             per_device_train_batch_size=batch_size,  # Batch size per device
+            weight_decay=0.01,
+            gradient_accumulation_steps=4, # if self.b_peft,
+            fp16=True, # if self.b_peft,
             eval_strategy="epoch",  # Evaluation strategy
             save_strategy="epoch",
             # eval_steps=1,
