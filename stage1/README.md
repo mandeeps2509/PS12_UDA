@@ -54,23 +54,35 @@ python3 ast_anomaly_detection.py -tr=True --trd='data/train' -tra='data/train/ch
 >> Model is saved at './trained_ast_clf'
 
 #### [Setup]
-- Use Dockerfile to build the image, UDA_IMAGE with tag v1 (as per build-arg values):
+*Dockerfile uses requirements-core.txt & requirements-extend.txt to build docker image in multi-stages*
+*NOTE*: 1. Check for the installation of ffmpeg(>=6.1) & torchcodec that is required
+        2. Update args values for src/ast_anomaly_detection.py in docker/entrypoint.sh
+        3. Ensure host HW architecture in Dockerfile (here, aarch64)
+
+- Use Dockerfile to build the image, UDA_IMAGE with tag v1 (as per build-arg values; ensure the correct torchcodec's gzip URL, here v0.7.0):
 ```
-docker build -f docker/Dockerfile --build-arg PY_VER=3.9 --build-arg BACKEND=mps --build-arg USER_UID=12345 --build-arg USERNAME=docker_usr --build-arg USER_GID=12345 --build-arg GROUPNAME=docker_ml -t UDA_IMAGE:v1 .
+docker build -f docker/Dockerfile --build-arg PY_VER=3.9 --build-arg BACKEND=mps --build-arg USER_UID=12345 --build-arg USERNAME=docker_usr --build-arg USER_GID=12345 --build-arg GROUPNAME=docker_ml --build-arg TORCHCODEC_URL="https://github.com/meta-pytorch/torchcodec/archive/refs/tags/v0.7.0.tar.gz" -t UDA_IMAGE:v1 .
 ```
 - Check the build docker image:
 ```
 docker image ls
 ```
-- Run the docker with container name: UDA_CONTAINER at port 8080:80
+- Run the docker with container name: UDA_CONTAINER at port 8080:80 w/ volume mount ./data at /ml_app/data in UDA_CONTAINER
 ```
-docker run -d --name UDA_CONTAINER -p 8080:80 UDA_IMAGE:v1
+docker run -it -p 8080:80 -v "$(pwd)"/data:/ml_app/data:ro --name UDA_CONTAINER UDA_IMAGE:v1 /bin/bash
 ```
 - Check the running status of the docker container
 ```
 docker ps
 ```
-- *NOTE*: Check for the installation of ffmpeg(>=6.1) that is required
+- Copy entrypoint.sh's python script output files {-o} to host in ./docker/run, if any:
+```
+docker container cp UDA_CONTAINER:/ml_app/results/output.json ./docker/run
+```
+- Remove container using CONTAINER_ID from CMD>> docker ps -a
+```
+docker rm CONTAINER_ID
+```
 
 #### [Inference]
 - Test mode only w/ test data at ../data/test & output results in ./results/output.json:
