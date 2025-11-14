@@ -1,0 +1,10 @@
+# Core frameworks & pkgs
+
+torch>=2.3
+torchvision
+torchaudio
+numpy
+scikit-learn
+pandas
+ffmpeg-python
+# torchcodec==0.7.0

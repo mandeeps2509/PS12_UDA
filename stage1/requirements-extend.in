@@ -1,0 +1,8 @@
+# Extented requirements-core.in
+
+evaluate
+soundfile
+pydub
+datasets
+transformers
+peft

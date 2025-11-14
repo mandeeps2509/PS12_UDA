@@ -1,0 +1,113 @@
+# ----------- Build stage -------------
+# build args
+ARG PY_VER="3.10"
+# docker base image (minimal)
+# FROM python:${PY_VER}-slim AS base
+FROM continuumio/miniconda3 AS base
+
+# build args
+ARG PY_VER="3.10"
+ARG CONDA_URL="https://repo.anaconda.com/miniconda/Miniconda3-py310_24.1.2-0-Linux-aarch64.sh"
+# ARG TORCHCODEC_URL="https://download.pytorch.org/whl/cpu/torchcodec-0.7.0-cp310-cp310-manylinux_2_28_x86_64.whl"
+ARG BACKEND="mps"
+ARG USERNAME="docker_usr"
+# ARG USER_UID="10001"
+# ARG USER_GID="12345"
+ARG GROUPNAME="docker_ml"
+
+# labels for meta-data
+# LABEL description="AIGC25: Underwater Domain Awareness"
+# LABEL version="1.0"
+# LABEL author="Mandeep Singh"
+# LABEL mail="mandeeps2509@gmail.com"
+
+
+ENV PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+# --- create non-root GPU-safe user ---
+# RUN groupadd --gid ${USER_GID} ${GROUPNAME} && \
+#     useradd -m --uid ${USER_UID} --gid ${USER_GID} ${USERNAME}
+RUN groupadd --gid 12345 docker_ml && \
+    useradd -m --uid 10001 --gid 12345 docker_usr
+     
+# set curr working dir
+WORKDIR /ml_app
+
+# --- install System deps ---
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    build-essential \
+    pkg-config \
+    wget && \
+    rm -rf /var/lib/apt/lists/*
+
+# RUN add-apt-repository ppa:ubuntuhandbook1/ffmpeg6
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg
+RUN ffmpeg -version
+
+# Download & install miniconda
+# RUN wget ${CONDA_URL} -O /tmp/miniconda.sh \
+#     && bash /tmp/miniconda.sh -b -p /opt/conda \
+#     && rm /tmp/miniconda.sh
+    
+# set PATH env variable to include Miniconda's bin dir
+# ENV PATH="/opt/conda/bin:$PATH"
+
+# # use mamba solver for conda env solving
+# RUN conda install -n base conda-libmamba-solver
+# RUN conda config --set solver libmamba
+
+# change ownership to current user
+# RUN chown -R ${USERNAME}:${GROUPNAME} /ml_app
+RUN chown -R docker_usr:docker_ml /ml_app
+RUN chown -R docker_usr:docker_ml /opt/conda
+# USER ${USERNAME}:${GROUPNAME}
+# switch to custom non-root user
+USER docker_usr
+
+# print UID & GID
+RUN echo ">> In container (after sys dependencies install):"
+RUN echo "User: $(whoami) UID: $(id -u) GID: $(id -g)"
+
+# copy dependencies into image
+COPY requirements-core.txt /ml_app
+COPY requirements-extend.txt /ml_app
+
+# create conda env
+RUN conda create --name cenv python=${PY_VER}
+RUN conda install -n cenv pip
+RUN conda init
+RUN conda activate
+RUN conda config --add channels conda-forge
+
+# use mamba solver for conda env solving
+RUN conda install -n cenv conda-libmamba-solver
+RUN conda config --set solver libmamba
+
+# install py dependencies
+# RUN if ["$PY_VER" = "3.9"]; then \
+# else \
+#     pip install --no-cache-dir torchcodec; \
+# fi
+RUN pip install --no-cache-dir -r requirements-core.txt --no-deps
+# RUN pip install --no-cache-dir https://download.pytorch.org/whl/cpu/torchcodec-0.7.0-cp39-cp39-manylinux_2_28_x86_64.whl
+RUN conda install torchcodec -c conda-forge
+
+## ------- Stage1.2: extended env stage --------
+FROM base AS extended
+RUN pip install --no-cache-dir -r requirements-extend.txt --no-deps
+
+# copy application code & req torch models into image
+RUN mkdir -p /ml_app/src
+COPY --chmod=755 src/*.py /ml_app/src
+COPY --chmod=755 src/trained_ast_clf /ml_app/src/trained_ast_clf
+COPY --chmod=755 src/trained_ast_clf_lora /ml_app/src/trained_ast_clf_lora
+COPY --chmod=755 docker/entrypoint.sh /ml_app
+
+# set permissions for script
+# RUN chmod +x /ml_app/entrypoint.sh
+# RUN chown -R ${USER_UID}:${USER_GID} /ml_app
+
+# set entry point
+ENTRYPOINT ["bash", "/ml_app/entrypoint.sh"]
