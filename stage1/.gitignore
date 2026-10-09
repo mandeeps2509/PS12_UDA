@@ -1,0 +1,3 @@
+src/__pycache__
+data/*
+src/trained_ast_clf_lora/README.md
